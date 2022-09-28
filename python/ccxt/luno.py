@@ -50,6 +50,7 @@ class luno(Exchange):
                 'fetchMarkets': True,
                 'fetchMarkOHLCV': False,
                 'fetchMyTrades': True,
+                'fetchOHLCV': True,
                 'fetchOpenInterestHistory': False,
                 'fetchOpenOrders': True,
                 'fetchOrder': True,
@@ -63,11 +64,24 @@ class luno(Exchange):
                 'fetchTicker': True,
                 'fetchTickers': True,
                 'fetchTrades': True,
-                'fetchTradingFees': True,
+                'fetchTradingFee': True,
+                'fetchTradingFees': False,
                 'reduceMargin': False,
                 'setLeverage': False,
                 'setMarginMode': False,
                 'setPositionMode': False,
+            },
+            'timeframes': {
+                '1m': 60,
+                '5m': 300,
+                '15m': 900,
+                '30m': 1800,
+                '1h': 3600,
+                '3h': 10800,
+                '4h': 14400,
+                '1d': 86400,
+                '3d': 259200,
+                '1w': 604800,
             },
             'urls': {
                 'referral': 'https://www.luno.com/invite/44893A',
@@ -75,7 +89,8 @@ class luno(Exchange):
                 'api': {
                     'public': 'https://api.luno.com/api',
                     'private': 'https://api.luno.com/api',
-                    'exchange': 'https://api.luno.com/api/exchange',
+                    'exchangePublic': 'https://api.luno.com/api/exchange',
+                    'exchangePrivate': 'https://api.luno.com/api/exchange',
                 },
                 'www': 'https://www.luno.com',
                 'doc': [
@@ -85,9 +100,14 @@ class luno(Exchange):
                 ],
             },
             'api': {
-                'exchange': {
+                'exchangePublic': {
                     'get': {
                         'markets': 1,
+                    },
+                },
+                'exchangePrivate': {
+                    'get': {
+                        'candles': 1,
                     },
                 },
                 'public': {
@@ -157,7 +177,7 @@ class luno(Exchange):
         :param dict params: extra parameters specific to the exchange api endpoint
         :returns [dict]: an array of objects representing market data
         """
-        response = self.exchangeGetMarkets(params)
+        response = self.exchangePublicGetMarkets(params)
         #
         #     {
         #         "markets":[
@@ -253,7 +273,7 @@ class luno(Exchange):
             code = self.safe_currency_code(currencyId)
             result.append({
                 'id': accountId,
-                'type': None,
+                'type': 'spot',  # hardcoded since only spot is available in luno
                 'currency': code,
                 'info': account,
             })
@@ -546,6 +566,62 @@ class luno(Exchange):
         # }
         return self.parse_ticker(response, market)
 
+    def parse_ohlcv(self, ohlcv, market=None):
+        # {
+        #     "timestamp": 1664055240000,
+        #     "open": "19612.65",
+        #     "close": "19612.65",
+        #     "high": "19612.65",
+        #     "low": "19612.65",
+        #     "volume": "0.00"
+        # }
+        return [
+            self.safe_integer(ohlcv, 'timestamp'),
+            self.safe_number(ohlcv, 'open'),
+            self.safe_number(ohlcv, 'high'),
+            self.safe_number(ohlcv, 'low'),
+            self.safe_number(ohlcv, 'close'),
+            self.safe_number(ohlcv, 'volume'),
+        ]
+
+    def fetch_ohlcv(self, symbol, timeframe='1m', since=None, limit=None, params={}):
+        """
+        fetches historical candlestick data containing the open, high, low, and close price, and the volume of a market
+        :param str symbol: unified symbol of the market to fetch OHLCV data for
+        :param str timeframe: the length of time each candle represents
+        :param int|None since: timestamp in ms of the earliest candle to fetch
+        :param int|None limit: the maximum amount of candles to fetch
+        :param dict params: extra parameters specific to the luno api endpoint
+        :returns [[int]]: A list of candles ordered as timestamp, open, high, low, close, volume
+        """
+        self.load_markets()
+        market = self.market(symbol)
+        request = {
+            'pair': market['id'],
+            'duration': self.timeframes[timeframe],
+        }
+        if since is not None:
+            request['since'] = int(since)
+        response = self.exchangePrivateGetCandles(self.extend(request, params))
+        #
+        #     {
+        #          "candles": [
+        #              {
+        #                  "timestamp": 1664055240000,
+        #                  "open": "19612.65",
+        #                  "close": "19612.65",
+        #                  "high": "19612.65",
+        #                  "low": "19612.65",
+        #                  "volume": "0.00"
+        #              },...
+        #          ],
+        #          "duration": 60,
+        #          "pair": "XBTEUR"
+        #     }
+        #
+        ohlcvs = self.safe_value(response, 'candles', [])
+        return self.parse_ohlcvs(ohlcvs, market, timeframe, since, limit)
+
     def parse_trade(self, trade, market):
         #
         # fetchTrades(public)
@@ -708,16 +784,29 @@ class luno(Exchange):
         trades = self.safe_value(response, 'trades', [])
         return self.parse_trades(trades, market, since, limit)
 
-    def fetch_trading_fees(self, params={}):
+    def fetch_trading_fee(self, symbol, params={}):
         """
-        fetch the trading fees for multiple markets
+        fetch the trading fees for a market
+        :param str symbol: unified market symbol
         :param dict params: extra parameters specific to the luno api endpoint
-        :returns dict: a dictionary of `fee structures <https://docs.ccxt.com/en/latest/manual.html#fee-structure>` indexed by market symbols
+        :returns dict: a `fee structure <https://docs.ccxt.com/en/latest/manual.html#fee-structure>`
         """
         self.load_markets()
-        response = self.privateGetFeeInfo(params)
+        market = self.market(symbol)
+        request = {
+            'symbol': market['id'],
+        }
+        response = self.privateGetFeeInfo(self.extend(request, params))
+        #
+        #     {
+        #          "maker_fee": "0.00250000",
+        #          "taker_fee": "0.00500000",
+        #          "thirty_day_volume": "0"
+        #     }
+        #
         return {
             'info': response,
+            'symbol': symbol,
             'maker': self.safe_number(response, 'maker_fee'),
             'taker': self.safe_number(response, 'taker_fee'),
         }
@@ -910,7 +999,9 @@ class luno(Exchange):
         query = self.omit(params, self.extract_params(path))
         if query:
             url += '?' + self.urlencode(query)
-        if api == 'private':
+        isPrivate = (api == 'private')
+        isExchangePrivate = (api == 'exchangePrivate')
+        if isPrivate or isExchangePrivate:
             self.check_required_credentials()
             auth = self.string_to_base64(self.apiKey + ':' + self.secret)
             headers = {
