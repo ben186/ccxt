@@ -48,6 +48,7 @@ module.exports = class luno extends Exchange {
                 'fetchMarkets': true,
                 'fetchMarkOHLCV': false,
                 'fetchMyTrades': true,
+                'fetchOHLCV': true,
                 'fetchOpenInterestHistory': false,
                 'fetchOpenOrders': true,
                 'fetchOrder': true,
@@ -67,13 +68,26 @@ module.exports = class luno extends Exchange {
                 'setMarginMode': false,
                 'setPositionMode': false,
             },
+            'timeframes': {
+                '1m': 60,
+                '5m': 300,
+                '15m': 900,
+                '30m': 1800,
+                '1h': 3600,
+                '3h': 10800,
+                '4h': 14400,
+                '1d': 86400,
+                '3d': 259200,
+                '1w': 604800,
+            },
             'urls': {
                 'referral': 'https://www.luno.com/invite/44893A',
                 'logo': 'https://user-images.githubusercontent.com/1294454/27766607-8c1a69d8-5ede-11e7-930c-540b5eb9be24.jpg',
                 'api': {
                     'public': 'https://api.luno.com/api',
                     'private': 'https://api.luno.com/api',
-                    'exchange': 'https://api.luno.com/api/exchange',
+                    'exchangePublic': 'https://api.luno.com/api/exchange',
+                    'exchangePrivate': 'https://api.luno.com/api/exchange',
                 },
                 'www': 'https://www.luno.com',
                 'doc': [
@@ -83,9 +97,14 @@ module.exports = class luno extends Exchange {
                 ],
             },
             'api': {
-                'exchange': {
+                'exchangePublic': {
                     'get': {
                         'markets': 1,
+                    },
+                },
+                'exchangePrivate': {
+                    'get': {
+                        'candles': 1,
                     },
                 },
                 'public': {
@@ -158,7 +177,7 @@ module.exports = class luno extends Exchange {
          * @param {object} params extra parameters specific to the exchange api endpoint
          * @returns {[object]} an array of objects representing market data
          */
-        const response = await this.exchangeGetMarkets (params);
+        const response = await this.exchangePublicGetMarkets (params);
         //
         //     {
         //         "markets":[
@@ -258,7 +277,7 @@ module.exports = class luno extends Exchange {
             const code = this.safeCurrencyCode (currencyId);
             result.push ({
                 'id': accountId,
-                'type': undefined,
+                'type': 'spot', // hardcoded since only spot is available in luno
                 'currency': code,
                 'info': account,
             });
@@ -589,6 +608,67 @@ module.exports = class luno extends Exchange {
         //     "status":"ACTIVE"
         // }
         return this.parseTicker (response, market);
+    }
+
+    parseOHLCV (ohlcv, market = undefined) {
+        // {
+        //     "timestamp": 1664055240000,
+        //     "open": "19612.65",
+        //     "close": "19612.65",
+        //     "high": "19612.65",
+        //     "low": "19612.65",
+        //     "volume": "0.00"
+        // }
+        return [
+            this.safeInteger (ohlcv, 'timestamp'),
+            this.safeNumber (ohlcv, 'open'),
+            this.safeNumber (ohlcv, 'high'),
+            this.safeNumber (ohlcv, 'low'),
+            this.safeNumber (ohlcv, 'close'),
+            this.safeNumber (ohlcv, 'volume'),
+        ];
+    }
+
+    async fetchOHLCV (symbol, timeframe = '1m', since = undefined, limit = undefined, params = {}) {
+        /**
+         * @method
+         * @name luno#fetchOHLCV
+         * @description fetches historical candlestick data containing the open, high, low, and close price, and the volume of a market
+         * @param {string} symbol unified symbol of the market to fetch OHLCV data for
+         * @param {string} timeframe the length of time each candle represents
+         * @param {int|undefined} since timestamp in ms of the earliest candle to fetch
+         * @param {int|undefined} limit the maximum amount of candles to fetch
+         * @param {object} params extra parameters specific to the luno api endpoint
+         * @returns {[[int]]} A list of candles ordered as timestamp, open, high, low, close, volume
+         */
+        await this.loadMarkets ();
+        const market = this.market (symbol);
+        const request = {
+            'pair': market['id'],
+            'duration': this.timeframes[timeframe],
+        };
+        if (since !== undefined) {
+            request['since'] = parseInt (since);
+        }
+        const response = await this.exchangePrivateGetCandles (this.extend (request, params));
+        //
+        //     {
+        //          "candles": [
+        //              {
+        //                  "timestamp": 1664055240000,
+        //                  "open": "19612.65",
+        //                  "close": "19612.65",
+        //                  "high": "19612.65",
+        //                  "low": "19612.65",
+        //                  "volume": "0.00"
+        //              },...
+        //          ],
+        //          "duration": 60,
+        //          "pair": "XBTEUR"
+        //     }
+        //
+        const ohlcvs = this.safeValue (response, 'candles', []);
+        return this.parseOHLCVs (ohlcvs, market, timeframe, since, limit);
     }
 
     parseTrade (trade, market) {
@@ -1001,7 +1081,9 @@ module.exports = class luno extends Exchange {
         if (Object.keys (query).length) {
             url += '?' + this.urlencode (query);
         }
-        if (api === 'private') {
+        const isPrivate = (api === 'private');
+        const isExchangePrivate = (api === 'exchangePrivate');
+        if (isPrivate || isExchangePrivate) {
             this.checkRequiredCredentials ();
             const auth = this.stringToBase64 (this.apiKey + ':' + this.secret);
             headers = {
