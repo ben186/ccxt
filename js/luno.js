@@ -461,7 +461,7 @@ module.exports = class luno extends Exchange {
         const request = {
             'id': id,
         };
-        const response = await this.privateGetOrdersId (this.extend (request, params));
+        const response = await this.exchangePrivateGetOrdersId (this.extend (request, params));
         return this.parseOrder (response);
     }
 
