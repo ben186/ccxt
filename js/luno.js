@@ -17,7 +17,6 @@ module.exports = class luno extends Exchange {
             'countries': [ 'GB', 'SG', 'ZA' ],
             // 300 calls per minute = 5 calls per second = 1000ms / 5 = 200ms between requests
             'rateLimit': 200,
-            'version': '1',
             'has': {
                 'CORS': undefined,
                 'spot': true,
@@ -85,10 +84,11 @@ module.exports = class luno extends Exchange {
                 'referral': 'https://www.luno.com/invite/44893A',
                 'logo': 'https://user-images.githubusercontent.com/1294454/27766607-8c1a69d8-5ede-11e7-930c-540b5eb9be24.jpg',
                 'api': {
-                    'public': 'https://api.luno.com/api',
-                    'private': 'https://api.luno.com/api',
-                    'exchangePublic': 'https://api.luno.com/api/exchange',
-                    'exchangePrivate': 'https://api.luno.com/api/exchange',
+                    'public': 'https://api.luno.com/api/1',
+                    'private': 'https://api.luno.com/api/1',
+                    'exchangePublic': 'https://api.luno.com/api/exchange/1',
+                    'exchangePrivate': 'https://api.luno.com/api/exchange/1',
+                    'exchangePrivateV2': 'https://api.luno.com/api/exchange/2',
                 },
                 'www': 'https://www.luno.com',
                 'doc': [
@@ -106,7 +106,11 @@ module.exports = class luno extends Exchange {
                 'exchangePrivate': {
                     'get': {
                         'candles': 1,
-                        'orders/{id}': 2,
+                    },
+                },
+                'exchangePrivateV2': {
+                    'get': {
+                        'orders/{id}': 1,
                     },
                 },
                 'public': {
@@ -1106,14 +1110,12 @@ module.exports = class luno extends Exchange {
     }
 
     sign (path, api = 'public', method = 'GET', params = {}, headers = undefined, body = undefined) {
-        let url = this.urls['api'][api] + '/' + this.version + '/' + this.implodeParams (path, params);
+        let url = this.urls['api'][api] + '/' + this.implodeParams (path, params);
         const query = this.omit (params, this.extractParams (path));
         if (Object.keys (query).length) {
             url += '?' + this.urlencode (query);
         }
-        const isPrivate = (api === 'private');
-        const isExchangePrivate = (api === 'exchangePrivate');
-        if (isPrivate || isExchangePrivate) {
+        if (api === 'private' || api === 'exchangePrivate' || api === 'exchangePrivateV2') {
             this.checkRequiredCredentials ();
             const auth = this.stringToBase64 (this.apiKey + ':' + this.secret);
             headers = {
