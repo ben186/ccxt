@@ -92,7 +92,7 @@ module.exports = class luno extends Exchange {
                 },
                 'exchangePrivate': {
                     'get': {
-                        'orders/{id}': 2,
+                        'orders/{id}': 1,
                     },
                 },
                 'public': {
