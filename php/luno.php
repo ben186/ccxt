@@ -16,7 +16,6 @@ class luno extends Exchange {
             'countries' => array( 'GB', 'SG', 'ZA' ),
             // 300 calls per minute = 5 calls per second = 1000ms / 5 = 200ms between requests
             'rateLimit' => 200,
-            'version' => '1',
             'has' => array(
                 'CORS' => null,
                 'spot' => true,
@@ -84,10 +83,11 @@ class luno extends Exchange {
                 'referral' => 'https://www.luno.com/invite/44893A',
                 'logo' => 'https://user-images.githubusercontent.com/1294454/27766607-8c1a69d8-5ede-11e7-930c-540b5eb9be24.jpg',
                 'api' => array(
-                    'public' => 'https://api.luno.com/api',
-                    'private' => 'https://api.luno.com/api',
-                    'exchangePublic' => 'https://api.luno.com/api/exchange',
-                    'exchangePrivate' => 'https://api.luno.com/api/exchange',
+                    'public' => 'https://api.luno.com/api/1',
+                    'private' => 'https://api.luno.com/api/1',
+                    'exchangePublic' => 'https://api.luno.com/api/exchange/1',
+                    'exchangePrivate' => 'https://api.luno.com/api/exchange/1',
+                    'exchangePrivateV2' => 'https://api.luno.com/api/exchange/2',
                 ),
                 'www' => 'https://www.luno.com',
                 'doc' => array(
@@ -105,7 +105,11 @@ class luno extends Exchange {
                 'exchangePrivate' => array(
                     'get' => array(
                         'candles' => 1,
-                        'orders/{id}' => 2,
+                    ),
+                ),
+                'exchangePrivateV2' => array(
+                    'get' => array(
+                        'orders/{id}' => 1,
                     ),
                 ),
                 'public' => array(
@@ -464,7 +468,7 @@ class luno extends Exchange {
         $request = array(
             'id' => $id,
         );
-        $response = $this->exchangePrivateGetOrdersId (array_merge($request, $params));
+        $response = $this->exchangePrivateV2GetOrdersId (array_merge($request, $params));
         return $this->parse_order($response);
     }
 
@@ -1071,14 +1075,12 @@ class luno extends Exchange {
     }
 
     public function sign($path, $api = 'public', $method = 'GET', $params = array (), $headers = null, $body = null) {
-        $url = $this->urls['api'][$api] . '/' . $this->version . '/' . $this->implode_params($path, $params);
+        $url = $this->urls['api'][$api] . '/' . $this->implode_params($path, $params);
         $query = $this->omit($params, $this->extract_params($path));
         if ($query) {
             $url .= '?' . $this->urlencode($query);
         }
-        $isPrivate = ($api === 'private');
-        $isExchangePrivate = ($api === 'exchangePrivate');
-        if ($isPrivate || $isExchangePrivate) {
+        if ($api === 'private' || $api === 'exchangePrivate' || $api === 'exchangePrivateV2') {
             $this->check_required_credentials();
             $auth = base64_encode($this->apiKey . ':' . $this->secret);
             $headers = array(

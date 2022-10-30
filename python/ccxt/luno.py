@@ -19,7 +19,6 @@ class luno(Exchange):
             'countries': ['GB', 'SG', 'ZA'],
             # 300 calls per minute = 5 calls per second = 1000ms / 5 = 200ms between requests
             'rateLimit': 200,
-            'version': '1',
             'has': {
                 'CORS': None,
                 'spot': True,
@@ -87,10 +86,11 @@ class luno(Exchange):
                 'referral': 'https://www.luno.com/invite/44893A',
                 'logo': 'https://user-images.githubusercontent.com/1294454/27766607-8c1a69d8-5ede-11e7-930c-540b5eb9be24.jpg',
                 'api': {
-                    'public': 'https://api.luno.com/api',
-                    'private': 'https://api.luno.com/api',
-                    'exchangePublic': 'https://api.luno.com/api/exchange',
-                    'exchangePrivate': 'https://api.luno.com/api/exchange',
+                    'public': 'https://api.luno.com/api/1',
+                    'private': 'https://api.luno.com/api/1',
+                    'exchangePublic': 'https://api.luno.com/api/exchange/1',
+                    'exchangePrivate': 'https://api.luno.com/api/exchange/1',
+                    'exchangePrivateV2': 'https://api.luno.com/api/exchange/2',
                 },
                 'www': 'https://www.luno.com',
                 'doc': [
@@ -108,7 +108,11 @@ class luno(Exchange):
                 'exchangePrivate': {
                     'get': {
                         'candles': 1,
-                        'orders/{id}': 2,
+                    },
+                },
+                'exchangePrivateV2': {
+                    'get': {
+                        'orders/{id}': 1,
                     },
                 },
                 'public': {
@@ -450,7 +454,7 @@ class luno(Exchange):
         request = {
             'id': id,
         }
-        response = self.exchangePrivateGetOrdersId(self.extend(request, params))
+        response = self.exchangePrivateV2GetOrdersId(self.extend(request, params))
         return self.parse_order(response)
 
     def fetch_orders_by_state(self, state=None, symbol=None, since=None, limit=None, params={}):
@@ -1010,13 +1014,11 @@ class luno(Exchange):
         }
 
     def sign(self, path, api='public', method='GET', params={}, headers=None, body=None):
-        url = self.urls['api'][api] + '/' + self.version + '/' + self.implode_params(path, params)
+        url = self.urls['api'][api] + '/' + self.implode_params(path, params)
         query = self.omit(params, self.extract_params(path))
         if query:
             url += '?' + self.urlencode(query)
-        isPrivate = (api == 'private')
-        isExchangePrivate = (api == 'exchangePrivate')
-        if isPrivate or isExchangePrivate:
+        if api == 'private' or api == 'exchangePrivate' or api == 'exchangePrivateV2':
             self.check_required_credentials()
             auth = self.string_to_base64(self.apiKey + ':' + self.secret)
             headers = {
