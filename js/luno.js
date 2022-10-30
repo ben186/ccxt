@@ -106,6 +106,7 @@ module.exports = class luno extends Exchange {
                 'exchangePrivate': {
                     'get': {
                         'candles': 1,
+                        'orders/{id}': 2,
                     },
                 },
                 'public': {
@@ -366,38 +367,48 @@ module.exports = class luno extends Exchange {
 
     parseOrderStatus (status) {
         const statuses = {
-            // todo add other statuses
+            'AWAITING': 'open',
             'PENDING': 'open',
+            'COMPLETE': 'closed',
         };
         return this.safeString (statuses, status, status);
     }
 
     parseOrder (order, market = undefined) {
-        //
-        //     {
-        //         "base": "string",
-        //         "completed_timestamp": "string",
-        //         "counter": "string",
-        //         "creation_timestamp": "string",
-        //         "expiration_timestamp": "string",
-        //         "fee_base": "string",
-        //         "fee_counter": "string",
-        //         "limit_price": "string",
-        //         "limit_volume": "string",
-        //         "order_id": "string",
-        //         "pair": "string",
-        //         "state": "PENDING",
-        //         "type": "BID"
+        //    Get Order V2: https://www.luno.com/en/developers/api#operation/ListOrdersV2
+        //    {
+        //          "base": "string",
+        //          "client_order_id": "string",
+        //          "completed_timestamp": "string",
+        //          "counter": "string",
+        //          "creation_timestamp": "string",
+        //          "expiration_timestamp": "string",
+        //          "fee_base": "string",
+        //          "fee_counter": "string",
+        //          "limit_price": "string",
+        //          "limit_volume": "string",
+        //          "order_id": "string",
+        //          "pair": "string",
+        //          "side": "BUY",
+        //          "status": "AWAITING",
+        //          "stop_direction": "ABOVE",
+        //          "stop_price": "string",
+        //          "time_in_force": "string",
+        //          "type": "LIMIT"
         //     }
-        //
+        const clientOrderId = this.safeString (order, 'client_order_id');
         const timestamp = this.safeInteger (order, 'creation_timestamp');
-        let status = this.parseOrderStatus (this.safeString (order, 'state'));
-        status = (status === 'open') ? status : status;
+        // This value is set at the time of processing a request from you to cancel the order, otherwise it will be 0. (from docs)
+        const expirationTimestamp = this.safeInteger (order, 'expiration_timestamp');
+        let status = this.parseOrderStatus (this.safeString (order, 'status'));
+        if (status === 'closed' && expirationTimestamp !== 0) {
+            status = 'canceled';
+        }
         let side = undefined;
-        const orderType = this.safeString (order, 'type');
-        if ((orderType === 'ASK') || (orderType === 'SELL')) {
+        const orderSide = this.safeString (order, 'side');
+        if ((orderSide === 'ASK') || (orderSide === 'SELL')) {
             side = 'sell';
-        } else if ((orderType === 'BID') || (orderType === 'BUY')) {
+        } else if ((orderSide === 'BID') || (orderSide === 'BUY')) {
             side = 'buy';
         }
         const marketId = this.safeString (order, 'pair');
@@ -408,6 +419,10 @@ module.exports = class luno extends Exchange {
         const baseFee = this.safeNumber (order, 'fee_base');
         const filled = this.safeString (order, 'base');
         const cost = this.safeString (order, 'counter');
+        const stopPriceString = this.safeString (order, 'stopPrice');
+        const stopPrice = this.parseNumber (this.omitZero (stopPriceString));
+        const timeInForce = this.safeString (order, 'time_in_force');
+        const orderType = this.safeString (order, 'type');
         let fee = undefined;
         if (quoteFee !== undefined) {
             fee = {
@@ -420,21 +435,23 @@ module.exports = class luno extends Exchange {
                 'currency': market['base'],
             };
         }
+        let type = orderType.toLowerCase ();
+        type = (type === 'stop_limit') ? 'limit' : type;
         const id = this.safeString (order, 'order_id');
         return this.safeOrder ({
             'id': id,
-            'clientOrderId': undefined,
+            'clientOrderId': clientOrderId,
             'datetime': this.iso8601 (timestamp),
             'timestamp': timestamp,
             'lastTradeTimestamp': undefined,
             'status': status,
             'symbol': market['symbol'],
-            'type': undefined,
-            'timeInForce': undefined,
+            'type': type,
+            'timeInForce': timeInForce,
             'postOnly': undefined,
             'side': side,
             'price': price,
-            'stopPrice': undefined,
+            'stopPrice': stopPrice,
             'amount': amount,
             'filled': filled,
             'cost': cost,
