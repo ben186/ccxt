@@ -413,7 +413,8 @@ class luno extends Exchange {
         $stopPriceString = $this->safe_string($order, 'stopPrice');
         $stopPrice = $this->parse_number($this->omit_zero($stopPriceString));
         $timeInForce = $this->safe_string($order, 'time_in_force');
-        $orderType = $this->safe_string($order, 'type');
+        $orderType = $this->safe_string_lower($order, 'type');
+        $type = ($orderType === 'stop_limit') ? 'limit' : $orderType;
         $fee = null;
         if ($quoteFee !== null) {
             $fee = array(
@@ -426,8 +427,6 @@ class luno extends Exchange {
                 'currency' => $market['base'],
             );
         }
-        $type = strtolower($orderType);
-        $type = ($type === 'stop_limit') ? 'limit' : $type;
         $id = $this->safe_string($order, 'order_id');
         return $this->safe_order(array(
             'id' => $id,
@@ -465,7 +464,7 @@ class luno extends Exchange {
         $request = array(
             'id' => $id,
         );
-        $response = $this->privateGetOrdersId (array_merge($request, $params));
+        $response = $this->exchangePrivateGetOrdersId (array_merge($request, $params));
         return $this->parse_order($response);
     }
 

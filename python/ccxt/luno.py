@@ -401,7 +401,8 @@ class luno(Exchange):
         stopPriceString = self.safe_string(order, 'stopPrice')
         stopPrice = self.parse_number(self.omit_zero(stopPriceString))
         timeInForce = self.safe_string(order, 'time_in_force')
-        orderType = self.safe_string(order, 'type')
+        orderType = self.safe_string_lower(order, 'type')
+        type = 'limit' if (orderType == 'stop_limit') else orderType
         fee = None
         if quoteFee is not None:
             fee = {
@@ -413,8 +414,6 @@ class luno(Exchange):
                 'cost': baseFee,
                 'currency': market['base'],
             }
-        type = orderType.lower()
-        type = 'limit' if (type == 'stop_limit') else type
         id = self.safe_string(order, 'order_id')
         return self.safe_order({
             'id': id,
@@ -451,7 +450,7 @@ class luno(Exchange):
         request = {
             'id': id,
         }
-        response = self.privateGetOrdersId(self.extend(request, params))
+        response = self.exchangePrivateGetOrdersId(self.extend(request, params))
         return self.parse_order(response)
 
     def fetch_orders_by_state(self, state=None, symbol=None, since=None, limit=None, params={}):
