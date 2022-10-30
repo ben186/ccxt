@@ -408,7 +408,8 @@ module.exports = class luno extends Exchange {
         const stopPriceString = this.safeString (order, 'stopPrice');
         const stopPrice = this.parseNumber (this.omitZero (stopPriceString));
         const timeInForce = this.safeString (order, 'time_in_force');
-        const orderType = this.safeString (order, 'type');
+        const orderType = this.safeStringLower (order, 'type');
+        const type = (orderType === 'stop_limit') ? 'limit' : orderType;
         let fee = undefined;
         if (quoteFee !== undefined) {
             fee = {
@@ -421,8 +422,6 @@ module.exports = class luno extends Exchange {
                 'currency': market['base'],
             };
         }
-        let type = orderType.toLowerCase ();
-        type = (type === 'stop_limit') ? 'limit' : type;
         const id = this.safeString (order, 'order_id');
         return this.safeOrder ({
             'id': id,
