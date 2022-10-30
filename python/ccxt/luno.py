@@ -108,6 +108,7 @@ class luno(Exchange):
                 'exchangePrivate': {
                     'get': {
                         'candles': 1,
+                        'orders/{id}': 2,
                     },
                 },
                 'public': {
@@ -348,37 +349,46 @@ class luno(Exchange):
 
     def parse_order_status(self, status):
         statuses = {
-            # todo add other statuses
+            'AWAITING': 'open',
             'PENDING': 'open',
+            'COMPLETE': 'closed',
         }
         return self.safe_string(statuses, status, status)
 
     def parse_order(self, order, market=None):
-        #
-        #     {
-        #         "base": "string",
-        #         "completed_timestamp": "string",
-        #         "counter": "string",
-        #         "creation_timestamp": "string",
-        #         "expiration_timestamp": "string",
-        #         "fee_base": "string",
-        #         "fee_counter": "string",
-        #         "limit_price": "string",
-        #         "limit_volume": "string",
-        #         "order_id": "string",
-        #         "pair": "string",
-        #         "state": "PENDING",
-        #         "type": "BID"
+        #    Get Order V2: https://www.luno.com/en/developers/api#operation/ListOrdersV2
+        #    {
+        #          "base": "string",
+        #          "client_order_id": "string",
+        #          "completed_timestamp": "string",
+        #          "counter": "string",
+        #          "creation_timestamp": "string",
+        #          "expiration_timestamp": "string",
+        #          "fee_base": "string",
+        #          "fee_counter": "string",
+        #          "limit_price": "string",
+        #          "limit_volume": "string",
+        #          "order_id": "string",
+        #          "pair": "string",
+        #          "side": "BUY",
+        #          "status": "AWAITING",
+        #          "stop_direction": "ABOVE",
+        #          "stop_price": "string",
+        #          "time_in_force": "string",
+        #          "type": "LIMIT"
         #     }
-        #
+        clientOrderId = self.safe_string(order, 'client_order_id')
         timestamp = self.safe_integer(order, 'creation_timestamp')
-        status = self.parse_order_status(self.safe_string(order, 'state'))
-        status = status if (status == 'open') else status
+        # This value is set at the time of processing a request from you to cancel the order, otherwise it will be 0.(from docs)
+        expirationTimestamp = self.safe_integer(order, 'expiration_timestamp')
+        status = self.parse_order_status(self.safe_string(order, 'status'))
+        if status == 'closed' and expirationTimestamp != 0:
+            status = 'canceled'
         side = None
-        orderType = self.safe_string(order, 'type')
-        if (orderType == 'ASK') or (orderType == 'SELL'):
+        orderSide = self.safe_string(order, 'side')
+        if (orderSide == 'ASK') or (orderSide == 'SELL'):
             side = 'sell'
-        elif (orderType == 'BID') or (orderType == 'BUY'):
+        elif (orderSide == 'BID') or (orderSide == 'BUY'):
             side = 'buy'
         marketId = self.safe_string(order, 'pair')
         market = self.safe_market(marketId, market)
@@ -388,6 +398,10 @@ class luno(Exchange):
         baseFee = self.safe_number(order, 'fee_base')
         filled = self.safe_string(order, 'base')
         cost = self.safe_string(order, 'counter')
+        stopPriceString = self.safe_string(order, 'stopPrice')
+        stopPrice = self.parse_number(self.omit_zero(stopPriceString))
+        timeInForce = self.safe_string(order, 'time_in_force')
+        orderType = self.safe_string(order, 'type')
         fee = None
         if quoteFee is not None:
             fee = {
@@ -399,21 +413,23 @@ class luno(Exchange):
                 'cost': baseFee,
                 'currency': market['base'],
             }
+        type = orderType.lower()
+        type = 'limit' if (type == 'stop_limit') else type
         id = self.safe_string(order, 'order_id')
         return self.safe_order({
             'id': id,
-            'clientOrderId': None,
+            'clientOrderId': clientOrderId,
             'datetime': self.iso8601(timestamp),
             'timestamp': timestamp,
             'lastTradeTimestamp': None,
             'status': status,
             'symbol': market['symbol'],
-            'type': None,
-            'timeInForce': None,
+            'type': type,
+            'timeInForce': timeInForce,
             'postOnly': None,
             'side': side,
             'price': price,
-            'stopPrice': None,
+            'stopPrice': stopPrice,
             'amount': amount,
             'filled': filled,
             'cost': cost,

@@ -47,6 +47,7 @@ class luno extends Exchange {
                 'fetchMarkets' => true,
                 'fetchMarkOHLCV' => false,
                 'fetchMyTrades' => true,
+                'fetchOHLCV' => true,
                 'fetchOpenInterestHistory' => false,
                 'fetchOpenOrders' => true,
                 'fetchOrder' => true,
@@ -67,13 +68,26 @@ class luno extends Exchange {
                 'setMarginMode' => false,
                 'setPositionMode' => false,
             ),
+            'timeframes' => array(
+                '1m' => 60,
+                '5m' => 300,
+                '15m' => 900,
+                '30m' => 1800,
+                '1h' => 3600,
+                '3h' => 10800,
+                '4h' => 14400,
+                '1d' => 86400,
+                '3d' => 259200,
+                '1w' => 604800,
+            ),
             'urls' => array(
                 'referral' => 'https://www.luno.com/invite/44893A',
                 'logo' => 'https://user-images.githubusercontent.com/1294454/27766607-8c1a69d8-5ede-11e7-930c-540b5eb9be24.jpg',
                 'api' => array(
                     'public' => 'https://api.luno.com/api',
                     'private' => 'https://api.luno.com/api',
-                    'exchange' => 'https://api.luno.com/api/exchange',
+                    'exchangePublic' => 'https://api.luno.com/api/exchange',
+                    'exchangePrivate' => 'https://api.luno.com/api/exchange',
                 ),
                 'www' => 'https://www.luno.com',
                 'doc' => array(
@@ -83,9 +97,15 @@ class luno extends Exchange {
                 ),
             ),
             'api' => array(
-                'exchange' => array(
+                'exchangePublic' => array(
                     'get' => array(
                         'markets' => 1,
+                    ),
+                ),
+                'exchangePrivate' => array(
+                    'get' => array(
+                        'candles' => 1,
+                        'orders/{id}' => 2,
                     ),
                 ),
                 'public' => array(
@@ -156,7 +176,7 @@ class luno extends Exchange {
          * @param {array} $params extra parameters specific to the exchange api endpoint
          * @return {[array]} an array of objects representing $market data
          */
-        $response = $this->exchangeGetMarkets ($params);
+        $response = $this->exchangePublicGetMarkets ($params);
         //
         //     {
         //         "markets":array(
@@ -254,7 +274,7 @@ class luno extends Exchange {
             $code = $this->safe_currency_code($currencyId);
             $result[] = array(
                 'id' => $accountId,
-                'type' => null,
+                'type' => 'spot', // hardcoded since only spot is available in luno
                 'currency' => $code,
                 'info' => $account,
             );
@@ -338,38 +358,48 @@ class luno extends Exchange {
 
     public function parse_order_status($status) {
         $statuses = array(
-            // todo add other $statuses
+            'AWAITING' => 'open',
             'PENDING' => 'open',
+            'COMPLETE' => 'closed',
         );
         return $this->safe_string($statuses, $status, $status);
     }
 
     public function parse_order($order, $market = null) {
-        //
-        //     {
-        //         "base" => "string",
-        //         "completed_timestamp" => "string",
-        //         "counter" => "string",
-        //         "creation_timestamp" => "string",
-        //         "expiration_timestamp" => "string",
-        //         "fee_base" => "string",
-        //         "fee_counter" => "string",
-        //         "limit_price" => "string",
-        //         "limit_volume" => "string",
-        //         "order_id" => "string",
-        //         "pair" => "string",
-        //         "state" => "PENDING",
-        //         "type" => "BID"
+        //    Get Order V2 => https://www.luno.com/en/developers/api#operation/ListOrdersV2
+        //    {
+        //          "base" => "string",
+        //          "client_order_id" => "string",
+        //          "completed_timestamp" => "string",
+        //          "counter" => "string",
+        //          "creation_timestamp" => "string",
+        //          "expiration_timestamp" => "string",
+        //          "fee_base" => "string",
+        //          "fee_counter" => "string",
+        //          "limit_price" => "string",
+        //          "limit_volume" => "string",
+        //          "order_id" => "string",
+        //          "pair" => "string",
+        //          "side" => "BUY",
+        //          "status" => "AWAITING",
+        //          "stop_direction" => "ABOVE",
+        //          "stop_price" => "string",
+        //          "time_in_force" => "string",
+        //          "type" => "LIMIT"
         //     }
-        //
+        $clientOrderId = $this->safe_string($order, 'client_order_id');
         $timestamp = $this->safe_integer($order, 'creation_timestamp');
-        $status = $this->parse_order_status($this->safe_string($order, 'state'));
-        $status = ($status === 'open') ? $status : $status;
+        // This value is set at the time of processing a request from you to cancel the $order, otherwise it will be 0. (from docs)
+        $expirationTimestamp = $this->safe_integer($order, 'expiration_timestamp');
+        $status = $this->parse_order_status($this->safe_string($order, 'status'));
+        if ($status === 'closed' && $expirationTimestamp !== 0) {
+            $status = 'canceled';
+        }
         $side = null;
-        $orderType = $this->safe_string($order, 'type');
-        if (($orderType === 'ASK') || ($orderType === 'SELL')) {
+        $orderSide = $this->safe_string($order, 'side');
+        if (($orderSide === 'ASK') || ($orderSide === 'SELL')) {
             $side = 'sell';
-        } elseif (($orderType === 'BID') || ($orderType === 'BUY')) {
+        } elseif (($orderSide === 'BID') || ($orderSide === 'BUY')) {
             $side = 'buy';
         }
         $marketId = $this->safe_string($order, 'pair');
@@ -380,6 +410,10 @@ class luno extends Exchange {
         $baseFee = $this->safe_number($order, 'fee_base');
         $filled = $this->safe_string($order, 'base');
         $cost = $this->safe_string($order, 'counter');
+        $stopPriceString = $this->safe_string($order, 'stopPrice');
+        $stopPrice = $this->parse_number($this->omit_zero($stopPriceString));
+        $timeInForce = $this->safe_string($order, 'time_in_force');
+        $orderType = $this->safe_string($order, 'type');
         $fee = null;
         if ($quoteFee !== null) {
             $fee = array(
@@ -392,21 +426,23 @@ class luno extends Exchange {
                 'currency' => $market['base'],
             );
         }
+        $type = strtolower($orderType);
+        $type = ($type === 'stop_limit') ? 'limit' : $type;
         $id = $this->safe_string($order, 'order_id');
         return $this->safe_order(array(
             'id' => $id,
-            'clientOrderId' => null,
+            'clientOrderId' => $clientOrderId,
             'datetime' => $this->iso8601($timestamp),
             'timestamp' => $timestamp,
             'lastTradeTimestamp' => null,
             'status' => $status,
             'symbol' => $market['symbol'],
-            'type' => null,
-            'timeInForce' => null,
+            'type' => $type,
+            'timeInForce' => $timeInForce,
             'postOnly' => null,
             'side' => $side,
             'price' => $price,
-            'stopPrice' => null,
+            'stopPrice' => $stopPrice,
             'amount' => $amount,
             'filled' => $filled,
             'cost' => $cost,
@@ -569,6 +605,65 @@ class luno extends Exchange {
         //     "status":"ACTIVE"
         // }
         return $this->parse_ticker($response, $market);
+    }
+
+    public function parse_ohlcv($ohlcv, $market = null) {
+        // {
+        //     "timestamp" => 1664055240000,
+        //     "open" => "19612.65",
+        //     "close" => "19612.65",
+        //     "high" => "19612.65",
+        //     "low" => "19612.65",
+        //     "volume" => "0.00"
+        // }
+        return array(
+            $this->safe_integer($ohlcv, 'timestamp'),
+            $this->safe_number($ohlcv, 'open'),
+            $this->safe_number($ohlcv, 'high'),
+            $this->safe_number($ohlcv, 'low'),
+            $this->safe_number($ohlcv, 'close'),
+            $this->safe_number($ohlcv, 'volume'),
+        );
+    }
+
+    public function fetch_ohlcv($symbol, $timeframe = '1m', $since = null, $limit = null, $params = array ()) {
+        /**
+         * fetches historical candlestick data containing the open, high, low, and close price, and the volume of a $market
+         * @param {string} $symbol unified $symbol of the $market to fetch OHLCV data for
+         * @param {string} $timeframe the length of time each candle represents
+         * @param {int|null} $since timestamp in ms of the earliest candle to fetch
+         * @param {int|null} $limit the maximum amount of candles to fetch
+         * @param {array} $params extra parameters specific to the luno api endpoint
+         * @return {[[int]]} A list of candles ordered as timestamp, open, high, low, close, volume
+         */
+        $this->load_markets();
+        $market = $this->market($symbol);
+        $request = array(
+            'pair' => $market['id'],
+            'duration' => $this->timeframes[$timeframe],
+        );
+        if ($since !== null) {
+            $request['since'] = intval($since);
+        }
+        $response = $this->exchangePrivateGetCandles (array_merge($request, $params));
+        //
+        //     {
+        //          "candles" => array(
+        //              array(
+        //                  "timestamp" => 1664055240000,
+        //                  "open" => "19612.65",
+        //                  "close" => "19612.65",
+        //                  "high" => "19612.65",
+        //                  "low" => "19612.65",
+        //                  "volume" => "0.00"
+        //              ),...
+        //          ),
+        //          "duration" => 60,
+        //          "pair" => "XBTEUR"
+        //     }
+        //
+        $ohlcvs = $this->safe_value($response, 'candles', array());
+        return $this->parse_ohlcvs($ohlcvs, $market, $timeframe, $since, $limit);
     }
 
     public function parse_trade($trade, $market) {
@@ -982,7 +1077,9 @@ class luno extends Exchange {
         if ($query) {
             $url .= '?' . $this->urlencode($query);
         }
-        if ($api === 'private') {
+        $isPrivate = ($api === 'private');
+        $isExchangePrivate = ($api === 'exchangePrivate');
+        if ($isPrivate || $isExchangePrivate) {
             $this->check_required_credentials();
             $auth = base64_encode($this->apiKey . ':' . $this->secret);
             $headers = array(
