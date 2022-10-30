@@ -355,7 +355,7 @@ module.exports = class luno extends Exchange {
         const statuses = {
             'AWAITING': 'open',
             'PENDING': 'open',
-            'COMPLETE': 'closed'
+            'COMPLETE': 'closed',
         };
         return this.safeString (statuses, status, status);
     }
@@ -382,7 +382,7 @@ module.exports = class luno extends Exchange {
         //          "time_in_force": "string",
         //          "type": "LIMIT"
         //     }
-        const clientOrderId = this.safeString(order, 'client_order_id');
+        const clientOrderId = this.safeString (order, 'client_order_id');
         const timestamp = this.safeInteger (order, 'creation_timestamp');
         // This value is set at the time of processing a request from you to cancel the order, otherwise it will be 0. (from docs)
         const expirationTimestamp = this.safeInteger (order, 'expiration_timestamp');
