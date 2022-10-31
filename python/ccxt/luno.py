@@ -860,6 +860,13 @@ class luno(Exchange):
             request['volume'] = self.amount_to_precision(market['symbol'], amount)
             request['price'] = self.price_to_precision(market['symbol'], price)
             request['type'] = 'BID' if (side == 'buy') else 'ASK'
+            stopPrice = self.safe_number(params, 'stopPrice')
+            stopDirection = self.safe_string(params, 'stopDirection')
+            if stopPrice is not None:
+                request['stop_price'] = stopPrice
+                request['stop_direction'] = 'RELATIVE_LAST_TRADE'
+                if stopDirection is not None:
+                    request['stop_direction'] = stopDirection
         response = getattr(self, method)(self.extend(request, params))
         return {
             'info': response,

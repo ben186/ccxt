@@ -938,6 +938,15 @@ class luno extends Exchange {
                 $request['volume'] = $this->amount_to_precision($market['symbol'], $amount);
                 $request['price'] = $this->price_to_precision($market['symbol'], $price);
                 $request['type'] = ($side === 'buy') ? 'BID' : 'ASK';
+                $stopPrice = $this->safe_number($params, 'stopPrice');
+                $stopDirection = $this->safe_string($params, 'stopDirection');
+                if ($stopPrice !== null) {
+                    $request['stop_price'] = $stopPrice;
+                    $request['stop_direction'] = 'RELATIVE_LAST_TRADE';
+                    if ($stopDirection !== null) {
+                        $request['stop_direction'] = $stopDirection;
+                    }
+                }
             }
             $response = Async\await($this->$method (array_merge($request, $params)));
             return array(
