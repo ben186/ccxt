@@ -934,6 +934,15 @@ module.exports = class luno extends Exchange {
             request['volume'] = this.amountToPrecision (market['symbol'], amount);
             request['price'] = this.priceToPrecision (market['symbol'], price);
             request['type'] = (side === 'buy') ? 'BID' : 'ASK';
+            const stopPrice = this.safeNumber (params, 'stopPrice');
+            const stopDirection = this.safeString (params, 'stopDirection');
+            if (stopPrice !== undefined) {
+                request['stop_price'] = stopPrice;
+                request['stop_direction'] = 'RELATIVE_LAST_TRADE'; 
+                if (stopDirection !== undefined) {
+                    request['stop_direction'] = stopDirection;
+                }
+            }
         }
         const response = await this[method] (this.extend (request, params));
         return {
