@@ -859,7 +859,7 @@ module.exports = class luno extends Exchange {
             const stopDirection = this.safeString (params, 'stopDirection');
             if (stopPrice !== undefined) {
                 request['stop_price'] = stopPrice;
-                request['stop_direction'] = 'RELATIVE_LAST_TRADE'; 
+                request['stop_direction'] = 'RELATIVE_LAST_TRADE';
                 if (stopDirection !== undefined) {
                     request['stop_direction'] = stopDirection;
                 }
